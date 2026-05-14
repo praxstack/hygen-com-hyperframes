@@ -75,3 +75,18 @@ export {
   runHyperframeLint,
   type PreparedHyperframeLintInput,
 } from "./services/hyperframeLint.js";
+
+// ── Distributed render primitives ───────────────────────────────────────────
+// The full surface lives at `@hyperframes/producer/distributed`; we
+// additionally re-export the three activity functions + their result
+// types here so callers that pin `@hyperframes/producer` don't need a
+// separate subpath import.
+export {
+  assemble,
+  plan,
+  renderChunk,
+  type AssembleResult,
+  type ChunkResult,
+  type DistributedRenderConfig,
+  type PlanResult,
+} from "./distributed.js";

@@ -93,6 +93,23 @@ await Promise.all([
     entryPoints: ["src/services/shaderTransitionWorker.ts"],
     outfile: "dist/services/shaderTransitionWorker.js",
   }),
+  // `@hyperframes/producer/distributed` subpath — the public distributed
+  // render primitives (plan / renderChunk / assemble). Bundled as a
+  // separate entry so adopters that don't need the in-process renderer
+  // (Lambda chunk workers, CDK constructs, thin orchestrators) can import
+  // only this surface and skip the rest of the producer's dependency tree.
+  build({
+    bundle: true,
+    platform: "node",
+    target: "node22",
+    format: "esm",
+    external: ["puppeteer", "esbuild", "postcss"],
+    plugins: [workspaceAliasPlugin],
+    minify: false,
+    sourcemap: true,
+    entryPoints: ["src/distributed.ts"],
+    outfile: "dist/distributed.js",
+  }),
 ]);
 
 // Copy core runtime artifacts so the producer can find them at dist/

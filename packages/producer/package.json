@@ -20,6 +20,10 @@
     },
     "./server": {
       "import": "./dist/public-server.js"
+    },
+    "./distributed": {
+      "import": "./dist/distributed.js",
+      "types": "./dist/distributed.d.ts"
     }
   },
   "publishConfig": {
