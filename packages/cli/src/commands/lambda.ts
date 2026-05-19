@@ -23,6 +23,14 @@ export const examples: Example[] = [
     "Render and stream progress until done",
     "hyperframes lambda render ./my-project --width 1920 --height 1080 --wait",
   ],
+  [
+    "Render with composition variables (personalised template)",
+    'hyperframes lambda render ./my-template --site-id abc1234deadbeef0 --width 1920 --height 1080 --variables \'{"title":"Hello Alice","accent":"#ff0000"}\'',
+  ],
+  [
+    "Render with variables from a JSON file",
+    "hyperframes lambda render ./my-template --site-id abc1234deadbeef0 --width 1920 --height 1080 --variables-file ./alice.json",
+  ],
   ["Check progress for a started render", "hyperframes lambda progress hf-render-abcd1234"],
   [
     "Pre-upload a project so multiple renders share the upload",
@@ -113,6 +121,25 @@ export default defineCommand({
     "output-key": {
       type: "string",
       description: "Final output S3 key (default: renders/<exec>/output.<ext>)",
+    },
+    // Variables — mirrors the local `hyperframes render` UX. Inline JSON or
+    // file path, plus --strict-variables for type-checked validation against
+    // the composition's `data-composition-variables` declaration.
+    variables: {
+      type: "string",
+      description:
+        'JSON object of variable values for the composition. Example: --variables \'{"title":"Hello"}\'. Values flow into window.__hfVariables on the Lambda chunk workers.',
+    },
+    "variables-file": {
+      type: "string",
+      description:
+        "Path to a JSON file with variable values (alternative to --variables). The file must contain a single JSON object.",
+    },
+    "strict-variables": {
+      type: "boolean",
+      description:
+        "Fail the render command if any --variables key is undeclared or has a wrong type vs the composition's data-composition-variables. Without this flag, mismatches are warnings.",
+      default: false,
     },
     wait: { type: "boolean", description: "Block until the render finishes" },
     "wait-interval-ms": {
@@ -242,6 +269,9 @@ export default defineCommand({
           maxParallelChunks: parsePositiveInt(args["max-parallel-chunks"], "--max-parallel-chunks"),
           executionName: args["execution-name"] as string | undefined,
           outputKey: args["output-key"] as string | undefined,
+          variables: args.variables as string | undefined,
+          variablesFile: args["variables-file"] as string | undefined,
+          strictVariables: Boolean(args["strict-variables"]),
           json: Boolean(args.json),
           wait: Boolean(args.wait),
           waitIntervalMs: parsePositiveInt(args["wait-interval-ms"], "--wait-interval-ms") ?? 5000,

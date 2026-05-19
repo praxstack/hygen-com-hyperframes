@@ -918,6 +918,22 @@ hyperframes lambda render ./my-project \
 
 `--json` swaps the human-readable output for a machine-parseable JSON snapshot.
 
+The composition can be parameterised with `--variables` / `--variables-file`, mirroring the local `hyperframes render` flags. Variables flow into the Step Functions execution input and reach every chunk worker as `window.__hfVariables`. Mismatches against the composition's `data-composition-variables` declaration print as warnings; pass `--strict-variables` to fail the command instead.
+
+```bash
+hyperframes lambda render ./my-template --site-id=abc1234deadbeef0 \
+  --width=1920 --height=1080 \
+  --variables '{"title":"Hello Alice","accent":"#ff0000"}'
+```
+
+```bash
+hyperframes lambda render ./my-template --site-id=abc1234deadbeef0 \
+  --width=1920 --height=1080 \
+  --variables-file ./alice.json --strict-variables
+```
+
+Variables travel inside the Step Functions Standard execution input, which AWS caps at 256 KiB for the entire payload. Pass typed data (strings, numbers, structured records) through variables; URL-reference media assets (images, audio, video) the composition resolves at render time rather than inlining bytes. The SDK validates the size client-side and rejects oversize inputs with a clear error before any AWS call runs — see the [templates-on-lambda guide](/deploy/templates-on-lambda) for the URL-your-assets convention.
+
 #### `lambda progress <renderId | executionArn>`
 
 Prints one progress snapshot — overall percent, frames rendered, Lambda invocations, accrued cost, and any errors. Accepts either a bare `renderId` (resolved against the stack's state-machine ARN) or a full SFN execution ARN.
