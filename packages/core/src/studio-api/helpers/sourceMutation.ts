@@ -55,6 +55,11 @@ export function removeElementFromHtml(source: string, target: SourceMutationTarg
   return wrappedFragment ? document.body.innerHTML || "" : document.toString();
 }
 
+function isHTMLElement(el: Element): boolean {
+  const HTMLEl = el.ownerDocument.defaultView?.HTMLElement;
+  return HTMLEl ? el instanceof HTMLEl : "style" in el;
+}
+
 export interface PatchOperation {
   type: "inline-style" | "attribute" | "html-attribute" | "text-content";
   property: string;
@@ -68,7 +73,7 @@ export function patchElementInHtml(
 ): string {
   const { document, wrappedFragment } = parseSourceDocument(source);
   const el = findTargetElement(document, target);
-  if (!el || !(el instanceof (el.ownerDocument.defaultView?.HTMLElement ?? Element))) return source;
+  if (!el || !isHTMLElement(el)) return source;
   const htmlEl = el as unknown as HTMLElement;
 
   for (const op of operations) {

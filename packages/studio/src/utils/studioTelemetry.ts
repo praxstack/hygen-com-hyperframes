@@ -1,3 +1,4 @@
+// PostHog public ingest key — write-only, safe to ship in the client bundle
 const POSTHOG_API_KEY = "phc_zjjbX0PnWxERXrMHhkEJWj9A9BhGVLRReICgsfTMmpx";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 const FLUSH_INTERVAL_MS = 30_000;
@@ -101,10 +102,13 @@ async function flushEvents(): Promise<void> {
   }
 }
 
-// Flush on page unload so we don't lose the last batch
 if (typeof window !== "undefined") {
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
+      if (flushTimer) {
+        clearInterval(flushTimer);
+        flushTimer = null;
+      }
       if (queue.length === 0) return;
       const batch = queue.map((e) => ({
         event: e.event,
