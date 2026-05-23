@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Liquid Glass Notification</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="lib/liquid-glass.iife.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #0a0218;
+        overflow: hidden;
+        font-family: "Inter", system-ui, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      #three-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        z-index: 0;
+      }
+      #glass-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        z-index: 1;
+      }
+
+      /* ── Glass Panels (NO text inside) ── */
+      .notif-card {
+        position: absolute;
+        width: 520px;
+        height: 110px;
+        background: rgba(255, 255, 255, 0.06);
+        --lg-blur: 0.22;
+        --lg-refraction: 0.6;
+        --lg-corner-radius: 40;
+        --lg-z-radius: 38;
+        --lg-specular: 0.2;
+        --lg-fresnel: 0.9;
+        --lg-edge-highlight: 0.1;
+        --lg-chrom-aberration: 0.05;
+        --lg-shadow-opacity: 0.35;
+        --lg-shadow-spread: 14;
+        --lg-shadow-offset-y: 4;
+        --lg-saturation: 0.25;
+      }
+      #glass-card1 {
+        top: 380px;
+        left: 100px;
+      }
+      #glass-card2 {
+        top: 560px;
+        left: 1300px;
+      }
+
+      /* ── Text Overlays ── */
+      .text-overlay {
+        position: absolute;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .notif-text {
+        width: 520px;
+        height: 110px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 24px;
+      }
+      #text-card1 {
+        top: 380px;
+        left: 100px;
+      }
+      #text-card2 {
+        top: 560px;
+        left: 1300px;
+      }
+
+      .avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 18px;
+        color: #fff;
+        flex-shrink: 0;
+      }
+      .avatar-ja {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      }
+      .avatar-kl {
+        background: linear-gradient(135deg, #f59e0b, #ef4444);
+      }
+
+      .notif-body {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .notif-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .notif-name {
+        font-weight: 700;
+        font-size: 16px;
+        color: #fff;
+      }
+      .notif-time {
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.45);
+        font-variant-numeric: tabular-nums;
+      }
+      .notif-msg {
+        font-size: 14px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.72);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="liquid-glass-notification"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="8"
+      data-root="true"
+    >
+      <!-- Layer 0: Three.js aurora -->
+      <canvas id="three-canvas" width="1920" height="1080"></canvas>
+
+      <!-- Layer 1: Glass panels (layoutsubtree, NO text) -->
+      <canvas id="glass-canvas" layoutsubtree width="1920" height="1080">
+        <div id="glass-card1" class="notif-card liquid-glass"></div>
+        <div id="glass-card2" class="notif-card liquid-glass"></div>
+      </canvas>
+
+      <!-- Layer 2: Text overlays -->
+      <div id="text-card1" class="text-overlay notif-text">
+        <div class="avatar avatar-ja">JA</div>
+        <div class="notif-body">
+          <div class="notif-header">
+            <span class="notif-name">Julia Alvarez</span>
+            <span class="notif-time">2m ago</span>
+          </div>
+          <div class="notif-msg">The new render pipeline is looking incredible!</div>
+        </div>
+      </div>
+
+      <div id="text-card2" class="text-overlay notif-text">
+        <div class="avatar avatar-kl">KL</div>
+        <div class="notif-body">
+          <div class="notif-header">
+            <span class="notif-name">Kevin Liu</span>
+            <span class="notif-time">5m ago</span>
+          </div>
+          <div class="notif-msg">Shipped the liquid glass effect to production</div>
+        </div>
+      </div>
+
+      <div
+        id="driver"
+        class="clip"
+        data-start="0"
+        data-duration="8"
+        data-track-index="0"
+        style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none"
+      ></div>
+    </div>
+
+    <script>
+      var W = 1920,
+        H = 1080,
+        DURATION = 8;
+
+      /* ── Three.js Aurora Shader ─────────────────────────────────────── */
+      var vs = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }";
+      var fs = [
+        "precision highp float;",
+        "varying vec2 vUv;",
+        "uniform float uTime;",
+        "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
+        "vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
+        "vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}",
+        "vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}",
+        "float snoise(vec3 v){",
+        "  const vec2 C=vec2(1.0/6.0,1.0/3.0);const vec4 D=vec4(0.0,0.5,1.0,2.0);",
+        "  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);",
+        "  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.0-g;",
+        "  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);",
+        "  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;",
+        "  i=mod289(i);",
+        "  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));",
+        "  float n_=0.142857142857;vec3 ns=n_*D.wyz-D.xzx;",
+        "  vec4 j=p-49.0*floor(p*ns.z*ns.z);vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.0*x_);",
+        "  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.0-abs(x)-abs(y);",
+        "  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);",
+        "  vec4 s0=floor(b0)*2.0+1.0;vec4 s1=floor(b1)*2.0+1.0;",
+        "  vec4 sh=-step(h,vec4(0.0));",
+        "  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;",
+        "  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);",
+        "  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));",
+        "  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;",
+        "  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);m=m*m;",
+        "  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));",
+        "}",
+        "void main(){",
+        "  vec2 uv=vUv;float ar=1920.0/1080.0;vec2 p=vec2(uv.x*ar,uv.y);float t=uTime*0.06;",
+        "  float wx=snoise(vec3(p*1.4,t*0.5))*0.2;float wy=snoise(vec3(p*1.4+100.0,t*0.5))*0.2;",
+        "  vec2 wp=p+vec2(wx,wy);",
+        "  vec3 base=mix(vec3(0.10,0.02,0.22),vec3(0.04,0.10,0.25),smoothstep(0.0,1.0,uv.x*0.6+uv.y*0.4));",
+        "  float angle=0.65;float ridgeUv=dot(wp,vec2(cos(angle),sin(angle)));",
+        "  float ridge1=sin(ridgeUv*8.0+t*2.0+snoise(vec3(wp*0.8,t))*1.5);",
+        "  float ridge2=sin(ridgeUv*5.5-t*1.4+snoise(vec3(wp*1.2+50.0,t*0.7))*2.0);",
+        "  float ridge3=sin(ridgeUv*12.0+t*3.0+snoise(vec3(wp*0.6+80.0,t*0.4))*1.0);",
+        "  float crease1=pow(abs(ridge1),0.35)*sign(ridge1)*0.5+0.5;",
+        "  float crease2=pow(abs(ridge2),0.4)*sign(ridge2)*0.5+0.5;",
+        "  float crease3=pow(abs(ridge3),0.5)*sign(ridge3)*0.5+0.5;",
+        "  vec3 warm=mix(vec3(0.9,0.4,0.08),vec3(0.95,0.65,0.15),crease1);",
+        "  float warmZone=smoothstep(0.15,0.75,uv.x+uv.y*0.4+snoise(vec3(uv*2.0,t))*0.3);",
+        "  vec3 cool=mix(vec3(0.02,0.4,0.55),vec3(0.25,0.7,0.82),crease2);",
+        "  float coolZone=smoothstep(0.25,0.85,1.2-uv.x+uv.y*0.5+snoise(vec3(uv*2.0+40.0,t*0.8))*0.25);",
+        "  vec3 hot=mix(vec3(0.8,0.1,0.4),vec3(0.6,0.08,0.65),crease3);",
+        "  float hotZone=smoothstep(0.5,0.9,snoise(vec3(uv*2.5+20.0,t*0.6))*0.5+0.5);",
+        "  vec3 col=base;",
+        "  col=mix(col,warm,warmZone*0.75*smoothstep(0.3,0.7,crease1));",
+        "  col=mix(col,cool,coolZone*0.65*smoothstep(0.2,0.65,crease2));",
+        "  col=mix(col,hot,hotZone*0.5*smoothstep(0.35,0.8,crease3));",
+        "  float edgeGlow=pow(1.0-abs(ridge1),6.0)*0.4+pow(1.0-abs(ridge2),5.0)*0.25;",
+        "  col+=edgeGlow*mix(warm,cool,uv.x)*0.8;",
+        "  col*=1.0-pow(abs(ridge1),4.0)*0.15;",
+        "  float vig=1.0-smoothstep(0.5,1.5,length((uv-0.5)*vec2(1.3,1.0)));",
+        "  col*=0.65+vig*0.5;",
+        "  float luma=dot(col,vec3(0.299,0.587,0.114));col=mix(vec3(luma),col,1.5);",
+        "  col=clamp(col,0.0,1.0);col=pow(col,vec3(0.9));",
+        "  gl_FragColor=vec4(col,1.0);",
+        "}",
+      ].join("\n");
+
+      /* ── Three.js Setup ─────────────────────────────────────────────── */
+      var threeCanvas = document.getElementById("three-canvas");
+      var renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: false });
+      renderer.setSize(W, H, false);
+      renderer.setPixelRatio(1);
+
+      var scene = new THREE.Scene();
+      var camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      var uniforms = { uTime: { value: 0 } };
+      var mat = new THREE.ShaderMaterial({
+        vertexShader: vs,
+        fragmentShader: fs,
+        uniforms: uniforms,
+      });
+      var quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+      scene.add(quad);
+
+      /* ── Glass Canvas ───────────────────────────────────────────────── */
+      var glassCanvas = document.getElementById("glass-canvas");
+      var ctx = glassCanvas.getContext("2d");
+      var lg = new LiquidGlass.LiquidGlassCanvas(glassCanvas);
+
+      function renderGlass(time) {
+        uniforms.uTime.value = time;
+        renderer.render(scene, camera);
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(threeCanvas, 0, 0, W, H);
+        lg.renderGlassElements();
+      }
+
+      /* ── GSAP Timeline ──────────────────────────────────────────────── */
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      var gc1 = document.getElementById("glass-card1");
+      var gc2 = document.getElementById("glass-card2");
+      var tc1 = document.getElementById("text-card1");
+      var tc2 = document.getElementById("text-card2");
+
+      /* Card 1: sweeps left-to-right with vertical sine wave */
+      tl.fromTo(
+        [gc1, tc1],
+        { left: 80, top: 340 },
+        { left: 1320, top: 340, duration: 8, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [gc1, tc1],
+        { top: 340 },
+        { top: 520, duration: 2.6, ease: "sine.inOut", yoyo: true, repeat: 2 },
+        0,
+      );
+
+      /* Card 2: sweeps right-to-left with offset vertical wave */
+      tl.fromTo(
+        [gc2, tc2],
+        { left: 1300, top: 580 },
+        { left: 100, top: 580, duration: 8, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [gc2, tc2],
+        { top: 580 },
+        { top: 400, duration: 3.2, ease: "power1.inOut", yoyo: true, repeat: 2 },
+        0,
+      );
+
+      /* Duration driver */
+      tl.to({ v: 0 }, { v: 1, duration: DURATION, ease: "none" }, 0);
+
+      tl.eventCallback("onUpdate", function () {
+        renderGlass(tl.time());
+      });
+
+      window.__timelines["liquid-glass-notification"] = tl;
+
+      setTimeout(function () {
+        renderGlass(0);
+      }, 0);
+    </script>
+  </body>
+</html>

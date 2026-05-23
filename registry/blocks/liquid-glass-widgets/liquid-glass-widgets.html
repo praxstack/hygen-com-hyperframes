@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Liquid Glass Widgets</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="lib/liquid-glass.iife.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #0a0218;
+        overflow: hidden;
+        font-family: "Inter", system-ui, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      #three-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        z-index: 0;
+      }
+      #glass-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        z-index: 1;
+      }
+
+      /* ── Glass Panels ── */
+      .glass-panel {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.06);
+        --lg-blur: 0.22;
+        --lg-refraction: 0.6;
+        --lg-corner-radius: 28;
+        --lg-z-radius: 38;
+        --lg-specular: 0.2;
+        --lg-fresnel: 0.9;
+        --lg-edge-highlight: 0.1;
+        --lg-chrom-aberration: 0.05;
+        --lg-shadow-opacity: 0.35;
+        --lg-shadow-spread: 14;
+        --lg-shadow-offset-y: 4;
+        --lg-saturation: 0.25;
+      }
+      .stat-card {
+        width: 220px;
+        height: 220px;
+      }
+      .showcase-card {
+        width: 500px;
+        height: 320px;
+      }
+      .pill-chip {
+        width: 130px;
+        height: 36px;
+        --lg-corner-radius: 40;
+      }
+
+      #glass-stat1 {
+        top: 300px;
+        left: 200px;
+      }
+      #glass-stat2 {
+        top: 300px;
+        left: 460px;
+      }
+      #glass-stat3 {
+        top: 300px;
+        left: 720px;
+      }
+      #glass-showcase {
+        top: 380px;
+        left: 1100px;
+      }
+      #glass-pill1 {
+        top: 720px;
+        left: 300px;
+      }
+      #glass-pill2 {
+        top: 720px;
+        left: 460px;
+      }
+      #glass-pill3 {
+        top: 720px;
+        left: 620px;
+      }
+
+      /* ── Text Overlays ── */
+      .text-overlay {
+        position: absolute;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      /* Stat cards */
+      .stat-text {
+        width: 220px;
+        height: 220px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .stat-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.5);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+      }
+      .stat-value {
+        font-size: 52px;
+        font-weight: 700;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .stat-unit {
+        font-size: 24px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.45);
+      }
+      #text-stat1 {
+        top: 300px;
+        left: 200px;
+      }
+      #text-stat2 {
+        top: 300px;
+        left: 460px;
+      }
+      #text-stat3 {
+        top: 300px;
+        left: 720px;
+      }
+
+      /* Showcase card */
+      .showcase-text {
+        width: 500px;
+        height: 320px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        padding: 32px;
+      }
+      .showcase-icon {
+        width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .showcase-title {
+        font-size: 28px;
+        font-weight: 700;
+        color: #fff;
+        text-align: center;
+        line-height: 1.2;
+      }
+      .showcase-desc {
+        font-size: 15px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.5);
+        text-align: center;
+        line-height: 1.5;
+        max-width: 380px;
+      }
+      #text-showcase {
+        top: 380px;
+        left: 1100px;
+      }
+
+      /* Pill chips */
+      .pill-text {
+        width: 130px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .pill-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .dot-green {
+        background: #4ade80;
+      }
+      .dot-blue {
+        background: #60a5fa;
+      }
+      .dot-violet {
+        background: #a78bfa;
+      }
+      .pill-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+      }
+      #text-pill1 {
+        top: 720px;
+        left: 300px;
+      }
+      #text-pill2 {
+        top: 720px;
+        left: 460px;
+      }
+      #text-pill3 {
+        top: 720px;
+        left: 620px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="liquid-glass-widgets"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="8"
+      data-root="true"
+    >
+      <canvas id="three-canvas" width="1920" height="1080"></canvas>
+
+      <canvas id="glass-canvas" layoutsubtree width="1920" height="1080">
+        <div id="glass-stat1" class="glass-panel stat-card liquid-glass"></div>
+        <div id="glass-stat2" class="glass-panel stat-card liquid-glass"></div>
+        <div id="glass-stat3" class="glass-panel stat-card liquid-glass"></div>
+        <div id="glass-showcase" class="glass-panel showcase-card liquid-glass"></div>
+        <div id="glass-pill1" class="glass-panel pill-chip liquid-glass"></div>
+        <div id="glass-pill2" class="glass-panel pill-chip liquid-glass"></div>
+        <div id="glass-pill3" class="glass-panel pill-chip liquid-glass"></div>
+      </canvas>
+
+      <!-- Stat cards -->
+      <div id="text-stat1" class="text-overlay stat-text">
+        <span class="stat-label">Temperature</span>
+        <span class="stat-value">24<span class="stat-unit">&deg;</span></span>
+      </div>
+      <div id="text-stat2" class="text-overlay stat-text">
+        <span class="stat-label">Battery</span>
+        <span class="stat-value">87<span class="stat-unit">%</span></span>
+      </div>
+      <div id="text-stat3" class="text-overlay stat-text">
+        <span class="stat-label">Steps</span>
+        <span class="stat-value">8.2<span class="stat-unit">K</span></span>
+      </div>
+
+      <!-- Showcase card -->
+      <div id="text-showcase" class="text-overlay showcase-text">
+        <div class="showcase-icon">
+          <svg width="48" height="48" viewBox="0 0 100 100" fill="none">
+            <path
+              d="M10.1851 57.8021L33.1145 73.8313C36.2202 75.9978 41.5173 73.5433 42.4816 69.4984L51.7611 30.4271C52.7253 26.3822 48.5802 23.9277 44.4602 26.0942L13.917 42.1235C6.96677 45.7676 4.97564 54.1579 10.1851 57.8021Z"
+              fill="url(#hfm0)"
+            />
+            <path
+              d="M87.5129 57.5141L56.9696 73.5433C52.8371 75.7098 48.7046 73.2553 49.6688 69.2104L58.9483 30.1391C59.9125 26.0942 65.2097 23.6397 68.3154 25.8062L91.2447 41.8354C96.4668 45.4796 94.4631 53.8699 87.5129 57.5141Z"
+              fill="url(#hfm1)"
+            />
+            <defs>
+              <linearGradient
+                id="hfm0"
+                x1="48.5676"
+                y1="25"
+                x2="44.7804"
+                y2="71.9384"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="#06E3FA" />
+                <stop offset="1" stop-color="#4FDB5E" />
+              </linearGradient>
+              <linearGradient
+                id="hfm1"
+                x1="54.8282"
+                y1="73.8392"
+                x2="72.0989"
+                y2="32.8932"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="#06E3FA" />
+                <stop offset="1" stop-color="#4FDB5E" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="showcase-title">HyperFrames</div>
+        <div class="showcase-desc">
+          Write HTML, render video. Ship compositions at the speed of code.
+        </div>
+      </div>
+
+      <!-- Pill chips -->
+      <div id="text-pill1" class="text-overlay pill-text">
+        <span class="pill-dot dot-green"></span>
+        <span class="pill-label">Connected</span>
+      </div>
+      <div id="text-pill2" class="text-overlay pill-text">
+        <span class="pill-dot dot-blue"></span>
+        <span class="pill-label">Bluetooth</span>
+      </div>
+      <div id="text-pill3" class="text-overlay pill-text">
+        <span class="pill-dot dot-violet"></span>
+        <span class="pill-label">Focus</span>
+      </div>
+
+      <div
+        id="driver"
+        class="clip"
+        data-start="0"
+        data-duration="8"
+        data-track-index="0"
+        style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none"
+      ></div>
+    </div>
+
+    <script>
+      var W = 1920,
+        H = 1080,
+        DURATION = 8;
+
+      /* ── Three.js Aurora Shader ─────────────────────────────────────── */
+      var vs = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }";
+      var fs = [
+        "precision highp float;",
+        "varying vec2 vUv;",
+        "uniform float uTime;",
+        "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
+        "vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
+        "vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}",
+        "vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}",
+        "float snoise(vec3 v){",
+        "  const vec2 C=vec2(1.0/6.0,1.0/3.0);const vec4 D=vec4(0.0,0.5,1.0,2.0);",
+        "  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);",
+        "  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.0-g;",
+        "  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);",
+        "  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;",
+        "  i=mod289(i);",
+        "  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));",
+        "  float n_=0.142857142857;vec3 ns=n_*D.wyz-D.xzx;",
+        "  vec4 j=p-49.0*floor(p*ns.z*ns.z);vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.0*x_);",
+        "  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.0-abs(x)-abs(y);",
+        "  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);",
+        "  vec4 s0=floor(b0)*2.0+1.0;vec4 s1=floor(b1)*2.0+1.0;",
+        "  vec4 sh=-step(h,vec4(0.0));",
+        "  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;",
+        "  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);",
+        "  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));",
+        "  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;",
+        "  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);m=m*m;",
+        "  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));",
+        "}",
+        "void main(){",
+        "  vec2 uv=vUv;float ar=1920.0/1080.0;vec2 p=vec2(uv.x*ar,uv.y);float t=uTime*0.06;",
+        "  float wx=snoise(vec3(p*1.4,t*0.5))*0.2;float wy=snoise(vec3(p*1.4+100.0,t*0.5))*0.2;",
+        "  vec2 wp=p+vec2(wx,wy);",
+        "  vec3 base=mix(vec3(0.10,0.02,0.22),vec3(0.04,0.10,0.25),smoothstep(0.0,1.0,uv.x*0.6+uv.y*0.4));",
+        "  float angle=0.65;float ridgeUv=dot(wp,vec2(cos(angle),sin(angle)));",
+        "  float ridge1=sin(ridgeUv*8.0+t*2.0+snoise(vec3(wp*0.8,t))*1.5);",
+        "  float ridge2=sin(ridgeUv*5.5-t*1.4+snoise(vec3(wp*1.2+50.0,t*0.7))*2.0);",
+        "  float ridge3=sin(ridgeUv*12.0+t*3.0+snoise(vec3(wp*0.6+80.0,t*0.4))*1.0);",
+        "  float crease1=pow(abs(ridge1),0.35)*sign(ridge1)*0.5+0.5;",
+        "  float crease2=pow(abs(ridge2),0.4)*sign(ridge2)*0.5+0.5;",
+        "  float crease3=pow(abs(ridge3),0.5)*sign(ridge3)*0.5+0.5;",
+        "  vec3 warm=mix(vec3(0.9,0.4,0.08),vec3(0.95,0.65,0.15),crease1);",
+        "  float warmZone=smoothstep(0.15,0.75,uv.x+uv.y*0.4+snoise(vec3(uv*2.0,t))*0.3);",
+        "  vec3 cool=mix(vec3(0.02,0.4,0.55),vec3(0.25,0.7,0.82),crease2);",
+        "  float coolZone=smoothstep(0.25,0.85,1.2-uv.x+uv.y*0.5+snoise(vec3(uv*2.0+40.0,t*0.8))*0.25);",
+        "  vec3 hot=mix(vec3(0.8,0.1,0.4),vec3(0.6,0.08,0.65),crease3);",
+        "  float hotZone=smoothstep(0.5,0.9,snoise(vec3(uv*2.5+20.0,t*0.6))*0.5+0.5);",
+        "  vec3 col=base;",
+        "  col=mix(col,warm,warmZone*0.75*smoothstep(0.3,0.7,crease1));",
+        "  col=mix(col,cool,coolZone*0.65*smoothstep(0.2,0.65,crease2));",
+        "  col=mix(col,hot,hotZone*0.5*smoothstep(0.35,0.8,crease3));",
+        "  float edgeGlow=pow(1.0-abs(ridge1),6.0)*0.4+pow(1.0-abs(ridge2),5.0)*0.25;",
+        "  col+=edgeGlow*mix(warm,cool,uv.x)*0.8;",
+        "  col*=1.0-pow(abs(ridge1),4.0)*0.15;",
+        "  float vig=1.0-smoothstep(0.5,1.5,length((uv-0.5)*vec2(1.3,1.0)));",
+        "  col*=0.65+vig*0.5;",
+        "  float luma=dot(col,vec3(0.299,0.587,0.114));col=mix(vec3(luma),col,1.5);",
+        "  col=clamp(col,0.0,1.0);col=pow(col,vec3(0.9));",
+        "  gl_FragColor=vec4(col,1.0);",
+        "}",
+      ].join("\n");
+
+      /* ── Three.js Setup ─────────────────────────────────────────────── */
+      var threeCanvas = document.getElementById("three-canvas");
+      var renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: false });
+      renderer.setSize(W, H, false);
+      renderer.setPixelRatio(1);
+
+      var scene = new THREE.Scene();
+      var camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      var uniforms = { uTime: { value: 0 } };
+      var shaderMat = new THREE.ShaderMaterial({
+        vertexShader: vs,
+        fragmentShader: fs,
+        uniforms: uniforms,
+      });
+      var quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), shaderMat);
+      scene.add(quad);
+
+      /* ── Glass Canvas ───────────────────────────────────────────────── */
+      var glassCanvas = document.getElementById("glass-canvas");
+      var ctx = glassCanvas.getContext("2d");
+      var lg = new LiquidGlass.LiquidGlassCanvas(glassCanvas);
+
+      function renderGlass(time) {
+        uniforms.uTime.value = time;
+        renderer.render(scene, camera);
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(threeCanvas, 0, 0, W, H);
+        lg.renderGlassElements();
+      }
+
+      /* ── GSAP Timeline ──────────────────────────────────────────────── */
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* Glass + text element pairs */
+      var s1g = document.getElementById("glass-stat1");
+      var s2g = document.getElementById("glass-stat2");
+      var s3g = document.getElementById("glass-stat3");
+      var scg = document.getElementById("glass-showcase");
+      var p1g = document.getElementById("glass-pill1");
+      var p2g = document.getElementById("glass-pill2");
+      var p3g = document.getElementById("glass-pill3");
+      var s1t = document.getElementById("text-stat1");
+      var s2t = document.getElementById("text-stat2");
+      var s3t = document.getElementById("text-stat3");
+      var sct = document.getElementById("text-showcase");
+      var p1t = document.getElementById("text-pill1");
+      var p2t = document.getElementById("text-pill2");
+      var p3t = document.getElementById("text-pill3");
+
+      /* ── Stat cards: loose circular orbit ── */
+      /* Stat 1: elliptical orbit upper region */
+      tl.fromTo(
+        [s1g, s1t],
+        { left: 300, top: 260 },
+        { left: 900, top: 260, duration: 4, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [s1g, s1t],
+        { top: 260 },
+        { top: 440, duration: 2.6, ease: "sine.inOut", yoyo: true, repeat: 2 },
+        0,
+      );
+
+      /* Stat 2: offset orbit mid region */
+      tl.fromTo(
+        [s2g, s2t],
+        { left: 700, top: 380 },
+        { left: 1200, top: 380, duration: 3.6, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [s2g, s2t],
+        { top: 380 },
+        { top: 200, duration: 3.2, ease: "power1.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+
+      /* Stat 3: offset orbit right region */
+      tl.fromTo(
+        [s3g, s3t],
+        { left: 1100, top: 300 },
+        { left: 500, top: 300, duration: 4.4, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [s3g, s3t],
+        { top: 300 },
+        { top: 500, duration: 2.0, ease: "sine.inOut", yoyo: true, repeat: 3 },
+        0,
+      );
+
+      /* ── Showcase card: independent drift ── */
+      tl.fromTo(
+        [scg, sct],
+        { left: 1050, top: 340 },
+        { left: 700, top: 340, duration: 8, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [scg, sct],
+        { top: 340 },
+        { top: 500, duration: 3.0, ease: "power2.inOut", yoyo: true, repeat: 1 },
+        0,
+      );
+      tl.fromTo(
+        [scg, sct],
+        { top: "+=0" },
+        { top: "+=40", duration: 1.8, ease: "sine.inOut", yoyo: true, repeat: 3 },
+        0.5,
+      );
+
+      /* ── Pills: float upward then drift sideways ── */
+      /* Pill 1 */
+      tl.fromTo(
+        [p1g, p1t],
+        { left: 400, top: 780 },
+        { left: 400, top: 620, duration: 2, ease: "power2.out" },
+        0,
+      );
+      tl.to(
+        [p1g, p1t],
+        { left: 250, top: 680, duration: 6, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        2,
+      );
+      tl.fromTo(
+        [p1g, p1t],
+        { top: "+=0" },
+        { top: "+=35", duration: 1.6, ease: "sine.inOut", yoyo: true, repeat: 4 },
+        0.3,
+      );
+
+      /* Pill 2 */
+      tl.fromTo(
+        [p2g, p2t],
+        { left: 700, top: 800 },
+        { left: 700, top: 650, duration: 2.2, ease: "back.out(1.4)" },
+        0,
+      );
+      tl.to(
+        [p2g, p2t],
+        { left: 900, top: 700, duration: 5.8, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        2.2,
+      );
+      tl.fromTo(
+        [p2g, p2t],
+        { top: "+=0" },
+        { top: "+=30", duration: 1.4, ease: "sine.inOut", yoyo: true, repeat: 4 },
+        0.6,
+      );
+
+      /* Pill 3 */
+      tl.fromTo(
+        [p3g, p3t],
+        { left: 1000, top: 820 },
+        { left: 1000, top: 640, duration: 1.8, ease: "expo.out" },
+        0,
+      );
+      tl.to(
+        [p3g, p3t],
+        { left: 1250, top: 690, duration: 6.2, ease: "sine.inOut", yoyo: true, repeat: 1 },
+        1.8,
+      );
+      tl.fromTo(
+        [p3g, p3t],
+        { top: "+=0" },
+        { top: "+=28", duration: 1.3, ease: "sine.inOut", yoyo: true, repeat: 5 },
+        0.1,
+      );
+
+      /* Duration driver */
+      tl.to({ v: 0 }, { v: 1, duration: DURATION, ease: "none" }, 0);
+
+      tl.eventCallback("onUpdate", function () {
+        renderGlass(tl.time());
+      });
+
+      window.__timelines["liquid-glass-widgets"] = tl;
+
+      setTimeout(function () {
+        renderGlass(0);
+      }, 0);
+    </script>
+  </body>
+</html>
