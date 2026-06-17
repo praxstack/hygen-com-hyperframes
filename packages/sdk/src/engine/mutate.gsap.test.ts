@@ -510,6 +510,220 @@ describe("removeGsapKeyframe", () => {
   });
 });
 
+describe("removeAllKeyframes", () => {
+  it("collapses keyframed to() tween to last keyframe's props", () => {
+    const parsed = fresh(KF_SCRIPT);
+    const animId = `[data-hf-id="hf-box"]-to-0-visual`;
+    const result = applyOp(parsed, { type: "removeAllKeyframes", animationId: animId });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).not.toContain("keyframes");
+    expect(newScript).not.toContain('"50%"');
+    expect(newScript).toContain("opacity: 1");
+  });
+
+  it("no-op (empty patch) when animation id not found", () => {
+    const parsed = fresh(KF_SCRIPT);
+    const result = applyOp(parsed, { type: "removeAllKeyframes", animationId: "nope" });
+    expect(result.forward).toHaveLength(0);
+  });
+
+  it("no-op when tween has no keyframes", () => {
+    const parsed = fresh(GSAP_SCRIPT);
+    const animId = `[data-hf-id="hf-box"]-to-0-visual`;
+    const result = applyOp(parsed, { type: "removeAllKeyframes", animationId: animId });
+    expect(result.forward).toHaveLength(0);
+  });
+});
+
+// ─── convertToKeyframes ────────────────────────────────────────────────────────
+
+describe("convertToKeyframes", () => {
+  // GSAP_SCRIPT: position 0.2 → id suffix "200"; opacity = visual group
+  it("converts flat to() tween to percentage keyframes", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, { type: "convertToKeyframes", animationId: TWEEN_ANIM_ID });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain("keyframes");
+    expect(newScript).toContain('"0%"');
+    expect(newScript).toContain('"100%"');
+    expect(newScript).toContain("easeEach");
+    expect(newScript).toContain('ease: "none"');
+  });
+
+  it("passes resolvedFromValues into 0% endpoint", () => {
+    const script = `var tl = gsap.timeline({ paused: true });
+tl.to("[data-hf-id=\\"hf-box\\"]", { x: 200, duration: 1 }, 0);
+window.__timelines["t"] = tl;`;
+    const parsed = fresh(script);
+    // position 0 → "0"; x = position group
+    const animId = `[data-hf-id="hf-box"]-to-0-position`;
+    const result = applyOp(parsed, {
+      type: "convertToKeyframes",
+      animationId: animId,
+      resolvedFromValues: { x: 42 },
+    });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain("42");
+  });
+
+  it("no-op when animation already has keyframes", () => {
+    const parsed = fresh(KF_SCRIPT);
+    const animId = `[data-hf-id="hf-box"]-to-0-visual`;
+    const result = applyOp(parsed, { type: "convertToKeyframes", animationId: animId });
+    expect(result.forward).toHaveLength(0);
+  });
+
+  it("no-op when animation id not found", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, { type: "convertToKeyframes", animationId: "nope" });
+    expect(result.forward).toHaveLength(0);
+  });
+});
+
+// ─── materializeKeyframes ─────────────────────────────────────────────────────
+
+describe("materializeKeyframes", () => {
+  it("adds keyframes property to flat tween", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, {
+      type: "materializeKeyframes",
+      animationId: TWEEN_ANIM_ID,
+      keyframes: [
+        { percentage: 0, properties: { opacity: 0 } },
+        { percentage: 100, properties: { opacity: 1 } },
+      ],
+    });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain("keyframes");
+    expect(newScript).toContain('"0%"');
+    expect(newScript).toContain('"100%"');
+  });
+
+  it("injects easeEach into keyframes object", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, {
+      type: "materializeKeyframes",
+      animationId: TWEEN_ANIM_ID,
+      keyframes: [
+        { percentage: 0, properties: { opacity: 0 } },
+        { percentage: 100, properties: { opacity: 1 } },
+      ],
+      easeEach: "power2.out",
+    });
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain("easeEach");
+    expect(newScript).toContain("power2.out");
+  });
+
+  it("no-op when animation id not found", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, {
+      type: "materializeKeyframes",
+      animationId: "nope",
+      keyframes: [{ percentage: 0, properties: { opacity: 0 } }],
+    });
+    expect(result.forward).toHaveLength(0);
+  });
+});
+
+// ─── splitIntoPropertyGroups ──────────────────────────────────────────────────
+
+describe("splitIntoPropertyGroups", () => {
+  it("splits mixed tween into multiple group tweens", () => {
+    const script = `var tl = gsap.timeline({ paused: true });
+tl.to("[data-hf-id=\\"hf-box\\"]", { x: 100, opacity: 0.5, duration: 1 }, 0);
+window.__timelines["t"] = tl;`;
+    const parsed = fresh(script);
+    // mixed tween has no propertyGroup → no group suffix in id
+    const animId = `[data-hf-id="hf-box"]-to-0`;
+    const result = applyOp(parsed, { type: "splitIntoPropertyGroups", animationId: animId });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    // x is position group, opacity is visual group — expect 2 tweens
+    const toCount = (newScript.match(/\.to\(/g) ?? []).length;
+    expect(toCount).toBe(2);
+  });
+
+  it("no-op when animation id not found", () => {
+    const parsed = fresh();
+    const result = applyOp(parsed, { type: "splitIntoPropertyGroups", animationId: "nope" });
+    expect(result.forward).toHaveLength(0);
+  });
+
+  it("no-op when tween has only one property group", () => {
+    // x + y = same "position" group → nothing to split
+    const script = `var tl = gsap.timeline({ paused: true });
+tl.to("[data-hf-id=\\"hf-box\\"]", { x: 100, y: 50, duration: 1 }, 0);
+window.__timelines["t"] = tl;`;
+    const parsed = fresh(script);
+    const animId = `[data-hf-id="hf-box"]-to-0-position`;
+    const result = applyOp(parsed, { type: "splitIntoPropertyGroups", animationId: animId });
+    expect(result.forward).toHaveLength(0);
+  });
+});
+
+// ─── splitAnimations ──────────────────────────────────────────────────────────
+
+describe("splitAnimations", () => {
+  const SPLIT_SCRIPT = `var tl = gsap.timeline({ paused: true });
+tl.to("#hero", { x: 200, duration: 4 }, 0);
+window.__timelines["t"] = tl;`;
+
+  function freshSplit() {
+    return parseMutable(`<div data-hf-id="hf-stage" data-hf-root style="width:1280px;height:720px">
+  <div data-hf-id="hf-hero"></div>
+  <script>${SPLIT_SCRIPT}</script>
+</div>`);
+  }
+
+  it("retargets post-split tween to newId", () => {
+    const parsed = freshSplit();
+    const result = applyOp(parsed, {
+      type: "splitAnimations",
+      originalId: "hero",
+      newId: "hero-2",
+      splitTime: 3,
+      elementStart: 0,
+      elementDuration: 4,
+    });
+    expect(result.forward).toHaveLength(1);
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain("#hero-2");
+  });
+
+  it("spanning tween produces fromTo on new element", () => {
+    const parsed = freshSplit();
+    const result = applyOp(parsed, {
+      type: "splitAnimations",
+      originalId: "hero",
+      newId: "hero-2",
+      splitTime: 2,
+      elementStart: 0,
+      elementDuration: 4,
+    });
+    const newScript = String(result.forward[0]?.value ?? "");
+    expect(newScript).toContain(".fromTo(");
+    expect(newScript).toContain("#hero-2");
+  });
+
+  it("no-op when originalId not found", () => {
+    const parsed = freshSplit();
+    const result = applyOp(parsed, {
+      type: "splitAnimations",
+      originalId: "nonexistent",
+      newId: "x",
+      splitTime: 2,
+      elementStart: 0,
+      elementDuration: 4,
+    });
+    expect(result.forward).toHaveLength(0);
+  });
+});
+
 // ─── Label ops ────────────────────────────────────────────────────────────────
 
 describe("addLabel", () => {

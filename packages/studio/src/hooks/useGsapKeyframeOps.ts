@@ -6,6 +6,8 @@ import { executeOptimistic } from "../utils/optimisticUpdate";
 import {
   sdkGsapKeyframePersist,
   sdkGsapRemoveKeyframePersist,
+  sdkGsapRemoveAllKeyframesPersist,
+  sdkGsapConvertToKeyframesPersist,
   type CutoverDeps,
 } from "../utils/sdkCutover";
 import type { KeyframeCacheEntry } from "../player/store/playerStore";
@@ -191,31 +193,52 @@ export function useGsapKeyframeOps({
   );
 
   const convertToKeyframes = useCallback(
-    (
+    async (
       selection: DomEditSelection,
       animationId: string,
       resolvedFromValues?: Record<string, number | string>,
     ) => {
-      // ponytail: no SDK equivalent; convertToKeyframes stays server-authoritative (T6f scope)
+      if (sdkSession && sdkDeps) {
+        const targetPath = selection.sourceFile || activeCompPath || "index.html";
+        const handled = await sdkGsapConvertToKeyframesPersist(
+          targetPath,
+          animationId,
+          resolvedFromValues,
+          sdkSession,
+          sdkDeps,
+          { label: "Convert to keyframes" },
+        );
+        if (handled) return;
+      }
       return commitMutation(
         selection,
         { type: "convert-to-keyframes", animationId, resolvedFromValues },
         { label: "Convert to keyframes" },
       );
     },
-    [commitMutation],
+    [commitMutation, activeCompPath, sdkSession, sdkDeps],
   );
 
   const removeAllKeyframes = useCallback(
-    (selection: DomEditSelection, animationId: string) => {
-      // ponytail: no SDK equivalent for remove-all-keyframes; stays server-authoritative
+    async (selection: DomEditSelection, animationId: string) => {
+      if (sdkSession && sdkDeps) {
+        const targetPath = selection.sourceFile || activeCompPath || "index.html";
+        const handled = await sdkGsapRemoveAllKeyframesPersist(
+          targetPath,
+          animationId,
+          sdkSession,
+          sdkDeps,
+          { label: "Remove all keyframes" },
+        );
+        if (handled) return;
+      }
       commitMutationSafely(
         selection,
         { type: "remove-all-keyframes", animationId },
         { label: "Remove all keyframes", softReload: true },
       );
     },
-    [commitMutationSafely],
+    [commitMutationSafely, activeCompPath, sdkSession, sdkDeps],
   );
 
   const commitKeyframeAtTime = useCallback(

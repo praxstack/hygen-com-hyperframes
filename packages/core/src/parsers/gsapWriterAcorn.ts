@@ -7,12 +7,16 @@
  * pretty-printer churn. Consumes ParsedGsapAcornForWrite from gsapParserAcorn.ts.
  */
 import MagicString from "magic-string";
-import { serializeValue, safeJsKey, type GsapAnimation } from "./gsapSerialize.js";
+import type { GsapAnimation, GsapPercentageKeyframe } from "./gsapSerialize.js";
+import { resolveConversionProps } from "./gsapSerialize.js";
 import {
   parseGsapScriptAcornForWrite,
   type ParsedGsapAcornForWrite,
   type TweenCallInfo,
 } from "./gsapParserAcorn.js";
+import { classifyPropertyGroup } from "./gsapConstants.js";
+import type { PropertyGroupName } from "./gsapConstants.js";
+import type { SplitAnimationsOptions, SplitAnimationsResult } from "./gsapParser.js";
 import * as acornWalk from "acorn-walk";
 
 // ── Code generation helpers ──────────────────────────────────────────────────
@@ -125,6 +129,18 @@ function removeProp(ms: MagicString, propNode: any, editableProps: any[]): void 
     // Non-first: remove from prev prop end to this prop end (drops leading ", ")
     ms.remove(editableProps[idx - 1].end, propNode.end);
   }
+}
+
+/** Serialize a vars record to an object-literal source: `{ k: v, ... }`. */
+function buildVarsObjectCode(record: Record<string, number | string>): string {
+  const entries = Object.entries(record).map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`);
+  return entries.length > 0 ? `{ ${entries.join(", ")} }` : "{}";
+}
+
+/** Overwrite a tween call's vars ObjectExpression with freshly-built source. */
+function overwriteVarsArg(ms: MagicString, call: TweenCallInfo, objCode: string): void {
+  if (!call.varsArg) return;
+  ms.overwrite(call.varsArg.start, call.varsArg.end, objCode);
 }
 
 /**
@@ -507,7 +523,7 @@ function percentageFromKey(key: string): number {
 
 /** Serialize a final keyframe property record (number|string values) to code. */
 function recordToCode(record: Record<string, number | string>): string {
-  const entries = Object.entries(record).map(([k, v]) => `${safeJsKey(k)}: ${serializeValue(v)}`);
+  const entries = Object.entries(record).map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`);
   return `{ ${entries.join(", ")} }`;
 }
 
@@ -899,6 +915,347 @@ export function removePropertyFromAnimation(
   return ms.toString();
 }
 
+/**
+ * Remove all keyframes from a tween, collapsing to a flat tween with one
+ * keyframe's properties: the first for `from()`, the last otherwise (the
+ * destination = the visible resting state).
+ */
+export function removeAllKeyframesFromScript(script: string, animationId: string): string {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return script;
+  const target = parsed.located.find((l) => l.id === animationId);
+  if (!target) return script;
+  const kfs = target.animation.keyframes?.keyframes;
+  if (!kfs || kfs.length === 0) return script;
+
+  const sorted = [...kfs].sort((a, b) => a.percentage - b.percentage);
+  const collapse = target.call.method === "from" ? sorted[0]! : sorted[sorted.length - 1]!;
+
+  // Flat vars = existing top-level props, then collapse-keyframe props (these
+  // win; skip the per-keyframe `ease` key), then duration/ease/extras. Drops
+  // keyframes + easeEach by reconstruction.
+  const flat: Record<string, number | string> = { ...target.animation.properties };
+  for (const [k, v] of Object.entries(collapse.properties)) {
+    if (k !== "ease") flat[k] = v;
+  }
+  if (target.animation.duration !== undefined) flat.duration = target.animation.duration;
+  if (target.animation.ease) flat.ease = target.animation.ease;
+  for (const [k, v] of Object.entries(target.animation.extras ?? {})) {
+    if (typeof v === "number" || typeof v === "string") flat[k] = v;
+  }
+
+  const ms = new MagicString(script);
+  overwriteVarsArg(ms, target.call, buildVarsObjectCode(flat));
+  return ms.toString();
+}
+
+/** Build the full replacement vars object for a tween being converted to keyframes. */
+function buildKeyframesVarsCode(
+  animation: GsapAnimation,
+  fromProps: Record<string, number | string>,
+  toProps: Record<string, number | string>,
+): string {
+  const fromEntries = Object.entries(fromProps).map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`);
+  const toEntries = Object.entries(toProps).map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`);
+  const easeEntry = animation.ease ? `, easeEach: ${JSON.stringify(animation.ease)}` : "";
+  const kfCode = `{ "0%": { ${fromEntries.join(", ")} }, "100%": { ${toEntries.join(", ")} }${easeEntry} }`;
+  const parts: string[] = [`keyframes: ${kfCode}`];
+  if (animation.duration !== undefined) parts.push(`duration: ${valueToCode(animation.duration)}`);
+  if (animation.ease) parts.push(`ease: "none"`);
+  for (const [k, v] of Object.entries(animation.extras ?? {})) {
+    if (typeof v === "number" || typeof v === "string")
+      parts.push(`${safeKey(k)}: ${valueToCode(v)}`);
+  }
+  return `{ ${parts.join(", ")} }`;
+}
+
+/**
+ * Convert a flat tween (to/from/fromTo) to percentage-keyframes format.
+ * `resolvedFromValues` supplies the current DOM state: overrides the 0% endpoint
+ * for `to()`, the 100% endpoint for `from()`, or merges into toProps for `fromTo()`.
+ */
+export function convertToKeyframesFromScript(
+  script: string,
+  animationId: string,
+  resolvedFromValues?: Record<string, number | string>,
+): string {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return script;
+  const target = parsed.located.find((l) => l.id === animationId);
+  if (!target) return script;
+  const { animation, call } = target;
+  if (animation.keyframes || call.method === "set") return script;
+
+  const { fromProps, toProps } = resolveConversionProps(animation, resolvedFromValues);
+  const ms = new MagicString(script);
+
+  if (call.method === "from" || call.method === "fromTo") {
+    ms.overwrite(call.node.callee.property.start, call.node.callee.property.end, "to");
+  }
+  if (call.method === "fromTo" && call.fromArg) {
+    ms.remove(call.fromArg.start, call.varsArg.start);
+  }
+  overwriteVarsArg(ms, call, buildKeyframesVarsCode(animation, fromProps, toProps));
+
+  return ms.toString();
+}
+
+// ── Keyframe-object code builder ─────────────────────────────────────────────
+
+/** Build a percentage-keyframes object literal: `{ "0%": { x: 0 }, "100%": { x: 100 } }`. */
+function buildKeyframeObjectCode(
+  keyframes: Array<{
+    percentage: number;
+    properties: Record<string, number | string>;
+    ease?: string;
+  }>,
+  easeEach?: string,
+): string {
+  const entries = keyframes.map((kf) => {
+    const props = Object.entries(kf.properties).map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`);
+    if (kf.ease) props.push(`ease: ${JSON.stringify(kf.ease)}`);
+    return `${JSON.stringify(`${kf.percentage}%`)}: { ${props.join(", ")} }`;
+  });
+  if (easeEach) entries.push(`easeEach: ${JSON.stringify(easeEach)}`);
+  return `{ ${entries.join(", ")} }`;
+}
+
+// ── Materialize keyframes ────────────────────────────────────────────────────
+
+/**
+ * Replace a dynamic or static keyframes expression with a fully-resolved
+ * percentage-keyframes object. Called when a user first edits a dynamically-
+ * generated keyframe in the studio so it becomes statically editable.
+ */
+export function materializeKeyframesFromScript(
+  script: string,
+  animationId: string,
+  keyframes: Array<{
+    percentage: number;
+    properties: Record<string, number | string>;
+    ease?: string;
+  }>,
+  easeEach?: string,
+  resolvedSelector?: string,
+): string {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return script;
+  const target = parsed.located.find((l) => l.id === animationId);
+  if (!target) return script;
+
+  const { call } = target;
+  const sorted = [...keyframes].sort((a, b) => a.percentage - b.percentage);
+  const kfObjCode = buildKeyframeObjectCode(sorted, easeEach);
+  const ms = new MagicString(script);
+
+  if (resolvedSelector) {
+    const selectorArg = call.node.arguments[0];
+    if (selectorArg)
+      ms.overwrite(selectorArg.start, selectorArg.end, JSON.stringify(resolvedSelector));
+  }
+
+  const kfProp = findPropertyNode(call.varsArg, "keyframes");
+  if (kfProp) {
+    ms.overwrite(kfProp.value.start, kfProp.value.end, kfObjCode);
+  } else if (call.varsArg?.type === "ObjectExpression") {
+    const vars = call.varsArg;
+    if (vars.properties.length > 0) {
+      ms.prependLeft(vars.properties[0].start, `keyframes: ${kfObjCode}, `);
+    } else {
+      ms.appendLeft(vars.end - 1, `keyframes: ${kfObjCode}`);
+    }
+  }
+
+  const eachProp = findPropertyNode(call.varsArg, "easeEach");
+  if (eachProp) {
+    const allProps = (call.varsArg.properties ?? []).filter((p: any) => isObjectProperty(p));
+    removeProp(ms, eachProp, allProps);
+  }
+
+  return ms.toString();
+}
+
+// ── Add animation with keyframes ──────────────────────────────────────────────
+
+/** Insert a new keyframed `to()` call and return the new animation ID. */
+export function addAnimationWithKeyframesToScript(
+  script: string,
+  targetSelector: string,
+  position: number,
+  duration: number,
+  keyframes: Array<{
+    percentage: number;
+    properties: Record<string, number | string>;
+    ease?: string;
+  }>,
+  ease?: string,
+): { script: string; id: string } {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return { script, id: "" };
+  const insertionPoint = findInsertionPoint(parsed);
+  if (insertionPoint === null) return { script, id: "" };
+
+  const sorted = [...keyframes].sort((a, b) => a.percentage - b.percentage);
+  const kfObjCode = buildKeyframeObjectCode(sorted);
+  const varParts = [`keyframes: ${kfObjCode}`, `duration: ${valueToCode(duration)}`];
+  if (ease) varParts.push(`ease: ${JSON.stringify(ease)}`);
+  const stmtCode = `${parsed.timelineVar}.to(${JSON.stringify(targetSelector)}, { ${varParts.join(", ")} }, ${valueToCode(position)});`;
+
+  const ms = new MagicString(script);
+  ms.appendLeft(insertionPoint, "\n" + stmtCode);
+
+  const result = ms.toString();
+  const reParsed = parseGsapScriptAcornForWrite(result);
+  const newId = reParsed?.located[reParsed.located.length - 1]?.id ?? "";
+  return { script: result, id: newId };
+}
+
+// ── Split into property groups ────────────────────────────────────────────────
+
+function collectPropertyKeys(anim: GsapAnimation): Set<string> {
+  const keys = new Set<string>();
+  if (anim.keyframes) {
+    for (const kf of anim.keyframes.keyframes) {
+      for (const k of Object.keys(kf.properties)) keys.add(k);
+    }
+  } else {
+    for (const k of Object.keys(anim.properties)) keys.add(k);
+  }
+  return keys;
+}
+
+function partitionPropertyGroups(keys: Set<string>): Map<PropertyGroupName, string[]> {
+  const groups = new Map<PropertyGroupName, string[]>();
+  for (const key of keys) {
+    if (key === "transformOrigin") continue;
+    const group = classifyPropertyGroup(key);
+    let arr = groups.get(group);
+    if (!arr) {
+      arr = [];
+      groups.set(group, arr);
+    }
+    arr.push(key);
+  }
+  return groups;
+}
+
+function assignTransformOrigin(groupProps: Map<PropertyGroupName, string[]>): void {
+  let largestGroup: PropertyGroupName | undefined;
+  let largestCount = 0;
+  for (const [group, props] of groupProps) {
+    if (props.length > largestCount) {
+      largestCount = props.length;
+      largestGroup = group;
+    }
+  }
+  if (largestGroup) groupProps.get(largestGroup)!.push("transformOrigin");
+}
+
+function filterGroupKeyframes(
+  kfs: GsapPercentageKeyframe[],
+  propSet: Set<string>,
+): Array<{ percentage: number; properties: Record<string, number | string>; ease?: string }> {
+  const result: Array<{
+    percentage: number;
+    properties: Record<string, number | string>;
+    ease?: string;
+  }> = [];
+  for (const kf of kfs) {
+    const filtered: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(kf.properties)) {
+      if (propSet.has(k)) filtered[k] = v;
+    }
+    if (Object.keys(filtered).length > 0) {
+      result.push({
+        percentage: kf.percentage,
+        properties: filtered,
+        ...(kf.ease ? { ease: kf.ease } : {}),
+      });
+    }
+  }
+  return result;
+}
+
+function filterGroupProperties(
+  properties: Record<string, number | string>,
+  propSet: Set<string>,
+): Record<string, number | string> {
+  const result: Record<string, number | string> = {};
+  for (const [k, v] of Object.entries(properties)) {
+    if (propSet.has(k)) result[k] = v;
+  }
+  return result;
+}
+
+function addGroupAnimToScript(
+  script: string,
+  anim: GsapAnimation,
+  propSet: Set<string>,
+): { script: string; id: string } {
+  if (anim.keyframes) {
+    const groupKeyframes = filterGroupKeyframes(anim.keyframes.keyframes, propSet);
+    if (groupKeyframes.length === 0) return { script, id: "" };
+    const pos = typeof anim.position === "number" ? anim.position : 0;
+    return addAnimationWithKeyframesToScript(
+      script,
+      anim.targetSelector,
+      pos,
+      anim.duration ?? 0.5,
+      groupKeyframes,
+      anim.keyframes.easeEach ?? anim.ease,
+    );
+  }
+  const groupProperties = filterGroupProperties(anim.properties, propSet);
+  if (Object.keys(groupProperties).length === 0) return { script, id: "" };
+  const fromProperties =
+    anim.method === "fromTo" && anim.fromProperties
+      ? filterGroupProperties(anim.fromProperties, propSet)
+      : undefined;
+  return addAnimationToScript(script, {
+    targetSelector: anim.targetSelector,
+    method: anim.method,
+    position: anim.position,
+    duration: anim.duration,
+    ease: anim.ease,
+    properties: groupProperties,
+    fromProperties,
+    extras: anim.extras,
+  });
+}
+
+/**
+ * Split a mixed-property tween into one tween per property group (position,
+ * scale, visual, etc.) so each group can be edited independently.
+ * Returns the updated script and the IDs of the newly-created tweens.
+ */
+export function splitIntoPropertyGroupsFromScript(
+  script: string,
+  animationId: string,
+): { script: string; ids: string[] } {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return { script, ids: [animationId] };
+  const target = parsed.located.find((l) => l.id === animationId);
+  if (!target) return { script, ids: [animationId] };
+  const { animation } = target;
+
+  const allPropKeys = collectPropertyKeys(animation);
+  const groupProps = partitionPropertyGroups(allPropKeys);
+  if (groupProps.size <= 1) return { script, ids: [animationId] };
+  if (allPropKeys.has("transformOrigin")) assignTransformOrigin(groupProps);
+
+  let result = removeAnimationFromScript(script, animationId);
+  for (const [, props] of groupProps) {
+    const { script: next, id } = addGroupAnimToScript(result, animation, new Set(props));
+    if (id) result = next;
+  }
+
+  const reParsed = parseGsapScriptAcornForWrite(result);
+  const newIds = (reParsed?.located ?? [])
+    .filter((l) => l.animation.targetSelector === animation.targetSelector)
+    .map((l) => l.id);
+  return { script: result, ids: newIds };
+}
+
 // ── Label write ops ───────────────────────────────────────────────────────────
 
 export function addLabelToScript(script: string, name: string, position: number): string {
@@ -945,4 +1302,170 @@ export function removeLabelFromScript(script: string, name: string): string {
     ms.remove(target.start, end);
   }
   return ms.toString();
+}
+
+// ── splitAnimationsInScript helpers ──────────────────────────────────────────
+
+/** Overwrite the selector (first arg) of a tween call. */
+function updateAnimationSelectorInScript(
+  script: string,
+  animationId: string,
+  newSelector: string,
+): string {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return script;
+  const target = parsed.located.find((l) => l.id === animationId);
+  if (!target) return script;
+  const selectorArg = target.call.node.arguments?.[0];
+  if (!selectorArg) return script;
+  const ms = new MagicString(script);
+  ms.overwrite(selectorArg.start, selectorArg.end, JSON.stringify(newSelector));
+  return ms.toString();
+}
+
+/**
+ * Insert a `tl.set()` call immediately after the timeline declaration
+ * (before existing tweens) to establish inherited state on a new element.
+ */
+function insertInheritedStateSetInScript(
+  script: string,
+  selector: string,
+  position: number,
+  properties: Record<string, number | string>,
+): string {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return script;
+  const props = Object.entries(properties)
+    .map(([k, v]) => `${safeKey(k)}: ${valueToCode(v)}`)
+    .join(", ");
+  const code = `${parsed.timelineVar}.set(${JSON.stringify(selector)}, { ${props} }, ${position});`;
+  const ms = new MagicString(script);
+  const tlDecl = findTimelineDeclarationStatement(parsed.ast, parsed.timelineVar);
+  if (tlDecl) {
+    ms.appendLeft(tlDecl.end, "\n" + code);
+  } else if (parsed.located.length > 0) {
+    const firstCall = parsed.located[0]!.call;
+    const exprStmt = findEnclosingExpressionStatement(firstCall.ancestors);
+    const insertAt = exprStmt?.start ?? firstCall.node.start;
+    ms.prependLeft(insertAt, code + "\n");
+  } else {
+    ms.append("\n" + code);
+  }
+  return ms.toString();
+}
+
+// fallow-ignore-next-line complexity
+export function splitAnimationsInScript(
+  script: string,
+  opts: SplitAnimationsOptions,
+): SplitAnimationsResult {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  if (!parsed) return { script, skippedSelectors: [] };
+
+  const originalSelector = `#${opts.originalId}`;
+  const newSelector = `#${opts.newId}`;
+
+  const animations = parsed.located.map((l) => l.animation);
+  const skippedSelectors: string[] = [];
+
+  for (const a of animations) {
+    if (a.targetSelector !== originalSelector && a.targetSelector.includes(opts.originalId)) {
+      skippedSelectors.push(a.targetSelector);
+    }
+  }
+
+  const matching = animations.filter((a) => a.targetSelector === originalSelector);
+  if (matching.length === 0) return { script, skippedSelectors };
+
+  let result = script;
+  const newElementStart = opts.splitTime;
+  const inheritedProps: Record<string, number | string> = {};
+
+  // Reverse iteration: updateAnimationSelectorInScript mutates selectors which
+  // can shift count-based ID suffixes for later animations.
+  for (let i = matching.length - 1; i >= 0; i--) {
+    const anim = matching[i]!;
+    const pos = typeof anim.position === "number" ? anim.position : 0;
+    const dur = anim.duration ?? 0;
+    const animEnd = pos + dur;
+
+    if (anim.keyframes) {
+      if (pos >= opts.splitTime) {
+        result = updateAnimationSelectorInScript(result, anim.id, newSelector);
+      } else if (animEnd > opts.splitTime) {
+        skippedSelectors.push(`${originalSelector} (keyframes spanning split)`);
+        const kfs = anim.keyframes.keyframes;
+        for (const kf of kfs) {
+          const kfTime = pos + (kf.percentage / 100) * dur;
+          if (kfTime <= opts.splitTime) {
+            for (const [k, v] of Object.entries(kf.properties)) {
+              inheritedProps[k] = v;
+            }
+          }
+        }
+      } else {
+        const kfs = anim.keyframes.keyframes;
+        if (kfs.length > 0) {
+          for (const [k, v] of Object.entries(kfs[kfs.length - 1]!.properties)) {
+            inheritedProps[k] = v;
+          }
+        }
+      }
+      continue;
+    }
+
+    if (animEnd <= opts.splitTime) {
+      for (const [k, v] of Object.entries(anim.properties)) {
+        inheritedProps[k] = v;
+      }
+      continue;
+    }
+
+    if (pos >= opts.splitTime) {
+      result = updateAnimationSelectorInScript(result, anim.id, newSelector);
+      continue;
+    }
+
+    // Spans the split — linear interpolation to compute mid-values.
+    const progress = dur > 0 ? (opts.splitTime - pos) / dur : 0;
+    const fromSource = anim.fromProperties ?? inheritedProps;
+    const midProps: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(anim.properties)) {
+      if (typeof v !== "number") {
+        midProps[k] = v;
+        continue;
+      }
+      const fromVal = typeof fromSource[k] === "number" ? (fromSource[k] as number) : 0;
+      midProps[k] = fromVal + (v - fromVal) * progress;
+    }
+
+    const firstHalfDuration = opts.splitTime - pos;
+    result = updateAnimationInScript(result, anim.id, {
+      duration: firstHalfDuration,
+      properties: midProps,
+    });
+
+    const secondHalfDuration = animEnd - opts.splitTime;
+    const addResult = addAnimationToScript(result, {
+      targetSelector: newSelector,
+      method: "fromTo",
+      position: newElementStart,
+      duration: secondHalfDuration,
+      properties: { ...anim.properties },
+      fromProperties: { ...midProps },
+      ease: anim.ease,
+      extras: anim.extras,
+    });
+    result = addResult.script;
+
+    for (const [k, v] of Object.entries(midProps)) {
+      inheritedProps[k] = v;
+    }
+  }
+
+  if (Object.keys(inheritedProps).length > 0) {
+    result = insertInheritedStateSetInScript(result, newSelector, newElementStart, inheritedProps);
+  }
+
+  return { script: result, skippedSelectors };
 }

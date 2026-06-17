@@ -105,7 +105,33 @@ export type EditOp =
   | { type: "removeGsapKeyframe"; animationId: string; percentage: number }
   | { type: "removeGsapProperty"; animationId: string; property: string; from?: boolean }
   | { type: "removeGsapTween"; animationId: string }
+  | { type: "removeAllKeyframes"; animationId: string }
+  | {
+      type: "convertToKeyframes";
+      animationId: string;
+      resolvedFromValues?: Record<string, number | string>;
+    }
   | { type: "deleteAllForSelector"; selector: string }
+  | {
+      type: "materializeKeyframes";
+      animationId: string;
+      keyframes: Array<{
+        percentage: number;
+        properties: Record<string, number | string>;
+        ease?: string;
+      }>;
+      easeEach?: string;
+      resolvedSelector?: string;
+    }
+  | { type: "splitIntoPropertyGroups"; animationId: string }
+  | {
+      type: "splitAnimations";
+      originalId: string;
+      newId: string;
+      splitTime: number;
+      elementStart: number;
+      elementDuration: number;
+    }
   | { type: "addLabel"; name: string; position: number }
   | { type: "removeLabel"; name: string };
 
