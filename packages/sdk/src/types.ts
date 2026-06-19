@@ -189,6 +189,40 @@ export type EditOp =
         keyframes: Array<{ percentage: number; properties: Record<string, number | string> }>;
         easeEach?: string;
       }>;
+    }
+  | {
+      /** Insert a new keyframed tween for targetSelector at the given position/duration. */
+      type: "addWithKeyframes";
+      targetSelector: string;
+      position: number;
+      duration: number;
+      keyframes: Array<{
+        percentage: number;
+        properties: Record<string, number | string>;
+        ease?: string;
+        auto?: boolean;
+      }>;
+      ease?: string;
+    }
+  | {
+      /**
+       * Replace an existing tween (by animationId) with a new keyframed tween.
+       * Equivalent to removeGsapTween + addWithKeyframes in one atomic op.
+       * Position-derived tween IDs renumber after the remove; callers must
+       * re-parse to discover the new ID.
+       */
+      type: "replaceWithKeyframes";
+      animationId: string;
+      targetSelector: string;
+      position: number;
+      duration: number;
+      keyframes: Array<{
+        percentage: number;
+        properties: Record<string, number | string>;
+        ease?: string;
+        auto?: boolean;
+      }>;
+      ease?: string;
     };
 
 export interface ElasticHold {

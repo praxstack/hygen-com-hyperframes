@@ -435,6 +435,86 @@ export function sdkGsapConvertToKeyframesPersist(
   );
 }
 
+type KeyframeSpec = {
+  percentage: number;
+  properties: Record<string, number | string>;
+  ease?: string;
+  auto?: boolean;
+};
+
+type KeyframesPayload = {
+  targetSelector: string;
+  position: number;
+  duration: number;
+  keyframes: KeyframeSpec[];
+  ease?: string;
+};
+
+/** Shared inner dispatch for addWithKeyframes / replaceWithKeyframes ops. */
+function dispatchWithKeyframes(
+  s: Composition,
+  payload: KeyframesPayload,
+  animationId?: string,
+): void {
+  if (animationId !== undefined) {
+    s.dispatch({ type: "replaceWithKeyframes", animationId, ...payload });
+  } else {
+    s.dispatch({ type: "addWithKeyframes", ...payload });
+  }
+}
+
+export function sdkAddWithKeyframesPersist(
+  targetPath: string,
+  targetSelector: string,
+  position: number,
+  duration: number,
+  keyframes: KeyframeSpec[],
+  ease: string | undefined,
+  sdkSession: Composition | null | undefined,
+  deps: CutoverDeps,
+  options?: CutoverOptions,
+): Promise<boolean> {
+  const payload: KeyframesPayload = {
+    targetSelector,
+    position,
+    duration,
+    keyframes,
+    ...(ease ? { ease } : {}),
+  };
+  return dispatchGsapOpAndPersist(targetPath, sdkSession, deps, options, (s) =>
+    dispatchWithKeyframes(s, payload),
+  );
+}
+
+export function sdkReplaceWithKeyframesPersist(
+  targetPath: string,
+  animationId: string,
+  targetSelector: string,
+  position: number,
+  duration: number,
+  keyframes: KeyframeSpec[],
+  ease: string | undefined,
+  sdkSession: Composition | null | undefined,
+  deps: CutoverDeps,
+  options?: CutoverOptions,
+): Promise<boolean> {
+  const payload: KeyframesPayload = {
+    targetSelector,
+    position,
+    duration,
+    keyframes,
+    ...(ease ? { ease } : {}),
+  };
+  return dispatchGsapOpAndPersist(
+    targetPath,
+    sdkSession,
+    deps,
+    options,
+    (s) => dispatchWithKeyframes(s, payload, animationId),
+    { animationId, opLabel: "replaceWithKeyframes" },
+  );
+}
+
 export async function sdkDeletePersist(
   hfId: string,
   originalContent: string,

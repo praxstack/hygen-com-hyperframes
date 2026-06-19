@@ -55,6 +55,7 @@ import { parseGsapScriptAcornForWrite } from "@hyperframes/core/gsap-parser-acor
 import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
 import {
   addAnimationToScript,
+  addAnimationWithKeyframesToScript,
   updateAnimationInScript,
   removeAnimationFromScript,
   removePropertyFromAnimation,
@@ -228,11 +229,24 @@ function applyArcPathOp(parsed: ParsedDocument, op: EditOp): MutationResult | un
   }
 }
 
+function applyGsapWithKeyframesOp(parsed: ParsedDocument, op: EditOp): MutationResult | undefined {
+  switch (op.type) {
+    case "addWithKeyframes":
+      return handleAddWithKeyframes(parsed, op);
+    case "replaceWithKeyframes":
+      return handleReplaceWithKeyframes(parsed, op);
+    default:
+      return undefined;
+  }
+}
+
 function applyGsapOp(parsed: ParsedDocument, op: EditOp): MutationResult | undefined {
   const kf = applyGsapKeyframeOp(parsed, op);
   if (kf !== undefined) return kf;
   const arc = applyArcPathOp(parsed, op);
   if (arc !== undefined) return arc;
+  const wkf = applyGsapWithKeyframesOp(parsed, op);
+  if (wkf !== undefined) return wkf;
   switch (op.type) {
     case "addGsapTween":
       return handleAddGsapTween(parsed, op.target, op.tween);
@@ -942,6 +956,51 @@ function cascadeRemoveAnimations(script: string, id: HfId): string {
   }
 }
 
+// ─── addWithKeyframes / replaceWithKeyframes handlers ────────────────────────
+
+function handleAddWithKeyframes(
+  parsed: ParsedDocument,
+  op: Extract<EditOp, { type: "addWithKeyframes" }>,
+): MutationResult {
+  const script = getGsapScript(parsed.document);
+  if (!script) throw new Error("No GSAP script block found in the composition.");
+  const { script: newScript, id: animationId } = addAnimationWithKeyframesToScript(
+    script,
+    op.targetSelector,
+    op.position,
+    op.duration,
+    op.keyframes,
+    op.ease,
+  );
+  if (!animationId) return EMPTY;
+  setGsapScript(parsed.document, newScript);
+  return { ...gsapScriptChange(script, newScript), meta: { animationId } };
+}
+
+function handleReplaceWithKeyframes(
+  parsed: ParsedDocument,
+  op: Extract<EditOp, { type: "replaceWithKeyframes" }>,
+): MutationResult {
+  const script = getGsapScript(parsed.document);
+  if (!script) throw new Error("No GSAP script block found in the composition.");
+  // Step 1: remove the existing tween. Position-derived IDs renumber, so the
+  // inverse patch restores the full GSAP script rather than trying to re-insert
+  // by ID (handled by the coarse gsapScriptChange patch pair).
+  const afterRemove = removeAnimationFromScript(script, op.animationId);
+  // Step 2: insert the replacement keyframed tween.
+  const { script: newScript, id: animationId } = addAnimationWithKeyframesToScript(
+    afterRemove,
+    op.targetSelector,
+    op.position,
+    op.duration,
+    op.keyframes,
+    op.ease,
+  );
+  if (!animationId) return EMPTY;
+  setGsapScript(parsed.document, newScript);
+  return { ...gsapScriptChange(script, newScript), meta: { animationId } };
+}
+
 // ─── setClassStyle handler ────────────────────────────────────────────────────
 
 function handleSetClassStyle(
@@ -1496,6 +1555,29 @@ export function validateOp(parsed: ParsedDocument, op: EditOp): CanResult {
     case "deleteAllForSelector":
     case "removeLabel":
       return gsapScriptMissing(parsed) ?? CAN_OK;
+    case "addWithKeyframes":
+      return (
+        gsapScriptMissing(parsed) ??
+        (op.keyframes.length === 0
+          ? canErr(
+              "E_INVALID_ARGS",
+              "addWithKeyframes requires at least one keyframe.",
+              "An empty keyframe list would create an animation with no keyframes.",
+            )
+          : CAN_OK)
+      );
+    case "replaceWithKeyframes":
+      return (
+        gsapScriptMissing(parsed) ??
+        gsapAnimationMissing(parsed, op.animationId) ??
+        (op.keyframes.length === 0
+          ? canErr(
+              "E_INVALID_ARGS",
+              "replaceWithKeyframes requires at least one keyframe.",
+              "An empty keyframe list would create an animation with no keyframes.",
+            )
+          : CAN_OK)
+      );
     case "unrollDynamicAnimations":
       return (
         gsapScriptMissing(parsed) ??
